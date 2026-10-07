@@ -1,0 +1,59 @@
+name: python-calc-cd
+
+# Continuous Deployment: provision a Linux Azure Web App with Bicep and deploy the
+# Python calculator to it. Runs automatically after a successful python-calc-ci run on main,
+# and can also be started manually from the Actions tab.
+on:
+  workflow_run:
+    workflows: ["python-calc-ci"]
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+# The workflow deploys into the pre-created sandbox resource group, detected at run time.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Only deploy when the CI run succeeded (or when started manually).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Detect the sandbox resource group
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            RG=$(az group list --query "[0].name" -o tsv)
+            echo "AZURE_RESOURCE_GROUP=$RG" >> "$GITHUB_ENV"
+            echo "Using resource group: $RG"
+
+      - name: Deploy web app infrastructure (Bicep)
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            WEBAPP_NAME=$(az deployment group create \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --template-file infra/webapp.bicep \
+              --query "properties.outputs.webAppName.value" \
+              --output tsv)
+            echo "WEBAPP_NAME=$WEBAPP_NAME" >> "$GITHUB_ENV"
+            echo "Provisioned web app: $WEBAPP_NAME"
+
+      - name: Package application
+        run: |
+          zip -r Web.zip src python_calc.py requirements.txt
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.WEBAPP_NAME }}
+          package: Web.zip
