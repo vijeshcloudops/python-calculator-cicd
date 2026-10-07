@@ -1,0 +1,47 @@
+name: python-calc-ci
+
+# Continuous Integration: build and test the Python calculator on every push / PR to main.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'python_calc.py'
+      - 'requirements.txt'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run unit tests
+        run: pytest tests/test_calc.py
+
+      - name: Package application as Web.zip
+        run: |
+          zip -r Web.zip src python_calc.py requirements.txt
+
+      - name: Publish build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Website
+          path: Web.zip
